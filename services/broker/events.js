@@ -24,7 +24,8 @@ class EventService {
       channel.publish(
         EXCHANGE_NAME,
         service,
-        Buffer.from(JSON.stringify(data))
+        Buffer.from(JSON.stringify(data)),
+        { persistent: true }
       );
     } catch (err) {
       Logger.error("Failed to publish event", err);
@@ -52,13 +53,19 @@ class EventService {
       channel.bindQueue(queue.queue, EXCHANGE_NAME, service);
       channel.consume(
         queue.queue,
-        (data) => {
+        async (data) => {
           if (data.content) {
-            const message = JSON.parse(data.content.toString());
-            subscriber.handleEvent(message);
+            try {
+              const message = JSON.parse(data.content.toString());
+              await subscriber.handleEvent(message); // Await the async function
+              channel.ack(data); // Acknowledge after successful processing
+            } catch (err) {
+              Logger.error("Error handling event", err);
+              channel.nack(data); // Re-queue the message on failure
+            }
           }
         },
-        { noAck: true }
+        { noAck: false }
       );
     } catch (err) {
       Logger.error("Failed to subscribe to service", err);
