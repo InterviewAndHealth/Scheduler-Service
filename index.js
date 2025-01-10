@@ -7,7 +7,7 @@ const { SERVICE_QUEUE } = require("./config");
 
 async function main() {
   Logger.initialize(Logger.levels.INFO);
-  await EventService.subscribe(SERVICE_QUEUE, IncomingEventService);
+  await await EventService.subscribe(SERVICE_QUEUE, IncomingEventService);
 
   await RedisService.initialize();
   SchedulerService.start();

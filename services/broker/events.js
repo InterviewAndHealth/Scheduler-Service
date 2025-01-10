@@ -43,7 +43,7 @@ class EventService {
    */
   static async subscribe(service, subscriber) {
     try {
-      const channel = await Broker.connect();
+      const channel = await Broker.channel();
       const queue = await channel.assertQueue(SERVICE_QUEUE, {
         durable: true,
         arguments: {
