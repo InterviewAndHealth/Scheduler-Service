@@ -1,4 +1,4 @@
-const amqplib = require("amqplib");
+var amqp = require("amqp-connection-manager");
 const { RABBITMQ_URL, EXCHANGE_NAME } = require("../../config");
 const { Logger } = require("../../utils");
 
@@ -13,28 +13,20 @@ class Broker {
   static async connect() {
     try {
       if (this.#connection) return this.#connection;
-      const connection = await amqplib.connect(RABBITMQ_URL);
+      const connection = amqp.connect([RABBITMQ_URL]);
 
-      connection.on("error", (err) => {
-        Logger.error("RabbitMQ connection error", err);
-      });
-
-      connection.on("close", () => {
-        Logger.error("RabbitMQ connection closed");
-        this.#connection = null;
-
-        setTimeout(async () => {
-          Logger.info("Reconnecting to RabbitMQ");
-          await this.connect();
-        }, 1000);
-      });
-
-      connection.on("blocked", (reason) => {
-        Logger.error("RabbitMQ connection blocked", reason);
-      });
+      connection.on("connect", () => console.log("Connected to RabbitMQ"));
+      connection.on("disconnect", (err) =>
+        console.log("Disconnected from RabbitMQ", err.stack)
+      );
+      connection.on("blocked", (reason) =>
+        console.log("RabbitMQ connection blocked", reason)
+      );
+      connection.on("unblocked", () =>
+        console.log("RabbitMQ connection unblocked")
+      );
 
       this.#connection = connection;
-      Logger.info("Connected to RabbitMQ");
       return connection;
     } catch (err) {
       Logger.error("Failed to connect to RabbitMQ", err);
@@ -42,19 +34,13 @@ class Broker {
   }
 
   /**
-   * Create a RabbitMQ channel
-   * @returns {Promise} - A promise that resolves to a RabbitMQ channel
-   * @throws {Error} - If RabbitMQ channel creation fails
+   * Close RabbitMQ connection
    */
-  static async channel() {
-    try {
-      const connection = await this.connect();
-      const channel = await connection.createChannel();
-      await channel.assertExchange(EXCHANGE_NAME, "direct", { durable: true });
-      Logger.info("Created RabbitMQ channel");
-      return channel;
-    } catch (err) {
-      Logger.error("Failed to create RabbitMQ channel", err);
+  static async close() {
+    Logger.info("Closing RabbitMQ connection");
+    if (this.#connection) {
+      await this.#connection.close();
+      this.#connection = null;
     }
   }
 }

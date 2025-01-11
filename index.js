@@ -1,6 +1,6 @@
 const RedisService = require("./services/redis");
 const SchedulerService = require("./services/scheduler");
-const { EventService } = require("./services/broker");
+const { Broker, EventService } = require("./services/broker");
 const { IncomingEventService } = require("./services/events");
 const { Logger } = require("./utils");
 const { SERVICE_QUEUE } = require("./config");
@@ -20,4 +20,10 @@ main()
   .catch((err) => {
     Logger.error("Failed to start scheduler", err);
     process.exit(1);
+  })
+  .finally(() => {
+    process.on("SIGINT", async () => {
+      await Broker.close();
+      process.exit(0);
+    });
   });
