@@ -3,12 +3,12 @@ const Broker = require("./broker");
 const { Logger } = require("../../utils");
 
 class EventService {
-  static pulishChannelWrapper = null;
+  static publishChannelWrapper = null;
 
   static async #getPublishChannelWrapper() {
-    if (!this.pulishChannelWrapper) {
+    if (!this.publishChannelWrapper) {
       const connection = await Broker.connect();
-      this.pulishChannelWrapper = connection.createChannel({
+      this.publishChannelWrapper = connection.createChannel({
         name: "scheduler-events-publisher",
         json: true,
         setup(channel) {
@@ -18,7 +18,7 @@ class EventService {
         },
       });
     }
-    return this.pulishChannelWrapper;
+    return this.publishChannelWrapper;
   }
 
   static async publish(service, data) {
@@ -32,43 +32,52 @@ class EventService {
 
   static async subscribe(service, subscriber) {
     const connection = await Broker.connect();
-    const onMessage = async (data) => {
-      if (data.content) {
-        try {
-          const message = JSON.parse(data.content.toString());
-          await subscriber.handleEvent(message);
-          channelWrapper.ack(data);
-        } catch (err) {
-          Logger.error("Error handling event", err);
-          channelWrapper.nack(data);
-        }
-      }
+
+    const setupChannel = async (channel) => {
+      await channel.assertExchange(EXCHANGE_NAME, "direct", { durable: true });
+      await channel.assertQueue(SERVICE_QUEUE, {
+        durable: true,
+        arguments: { "x-queue-type": "quorum" },
+      });
+      await channel.bindQueue(SERVICE_QUEUE, EXCHANGE_NAME, service);
+      await channel.consume(
+        SERVICE_QUEUE,
+        async (data) => {
+          if (data.content) {
+            try {
+              const message = JSON.parse(data.content.toString());
+              await subscriber.handleEvent(message);
+              channel.ack(data);
+            } catch (err) {
+              Logger.error("Error handling event", err);
+              channel.nack(data);
+            }
+          }
+        },
+        { noAck: false }
+      );
     };
 
     const channelWrapper = connection.createChannel({
       name: "scheduler-events-subscriber",
       json: true,
-      setup(channel) {
-        return Promise.all([
-          channel.assertExchange(EXCHANGE_NAME, "direct", { durable: true }),
-          channel.assertQueue(SERVICE_QUEUE, {
-            durable: true,
-            arguments: { "x-queue-type": "quorum" },
-          }),
-          channel.bindQueue(SERVICE_QUEUE, EXCHANGE_NAME, service),
-          channel.consume(SERVICE_QUEUE, onMessage, { noAck: false }),
-        ]);
-      },
+      setup: setupChannel,
+    });
+
+    channelWrapper.addSetup((channel) => {
+      return channel.prefetch(1);
+    });
+
+    // Rebind on reconnect
+    connection.on("connect", async () => {
+      Logger.info("Binding queues...");
+      await setupChannel(channelWrapper);
     });
 
     channelWrapper
       .waitForConnect()
-      .then(function () {
-        Logger.info("Listening for events from service", service);
-      })
-      .catch(function (err) {
-        Logger.error("Failed to subscribe to service", err);
-      });
+      .then(() => Logger.info(`Listening for events from service ${service}`))
+      .catch((err) => Logger.error("Failed to subscribe to service", err));
   }
 }
 

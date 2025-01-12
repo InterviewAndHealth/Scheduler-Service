@@ -1,5 +1,5 @@
-var amqp = require("amqp-connection-manager");
-const { RABBITMQ_URL, EXCHANGE_NAME } = require("../../config");
+const amqp = require("amqp-connection-manager");
+const { RABBITMQ_URL } = require("../../config");
 const { Logger } = require("../../utils");
 
 class Broker {
@@ -15,15 +15,17 @@ class Broker {
       if (this.#connection) return this.#connection;
       const connection = amqp.connect([RABBITMQ_URL]);
 
-      connection.on("connect", () => console.log("Connected to RabbitMQ"));
+      connection.on("connect", () => {
+        Logger.info("Connected to RabbitMQ");
+      });
       connection.on("disconnect", (err) =>
-        console.log("Disconnected from RabbitMQ", err.stack)
+        Logger.error("Disconnected from RabbitMQ", err)
       );
       connection.on("blocked", (reason) =>
-        console.log("RabbitMQ connection blocked", reason)
+        Logger.warning("RabbitMQ connection blocked", reason)
       );
       connection.on("unblocked", () =>
-        console.log("RabbitMQ connection unblocked")
+        Logger.info("RabbitMQ connection unblocked")
       );
 
       this.#connection = connection;
